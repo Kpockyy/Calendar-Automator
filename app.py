@@ -327,3 +327,6 @@ if __name__ == "__main__":
     print(f"📈 Current records (training): {len(data_store.df)}")
     print(f"📈 Current records (about):    {len(data_store.about_df)}\n")
     app.run(host="0.0.0.0", port=port, debug=True)
+
+
+# source venv/bin/activate

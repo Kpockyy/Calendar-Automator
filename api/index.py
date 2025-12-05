@@ -190,7 +190,7 @@ def parse_ics_file(ics_path):
 
 @app.route('/')
 def index():
-    return send_from_directory('static', 'mains.html')
+    return send_from_directory('templates', 'mains.html')
 
 
 @app.route('/<path:path>')

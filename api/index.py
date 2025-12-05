@@ -7,15 +7,16 @@ from datetime import datetime
 import PyPDF2
 from icalendar import Calendar
 import pandas as pd
+import tempfile
 
-app = Flask(__name__, static_folder='static', static_url_path='')
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 # ============================================
 # CONFIGURATION
 # ============================================
 
-UPLOAD_FOLDER = 'template'
+UPLOAD_FOLDER = '/tmp'
 ALLOWED_EXTENSIONS = {'pdf', 'ics'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
@@ -23,7 +24,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Base directory (folder where app.py lives)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = tempfile.gettempdir() 
 TRAINING_PATH = os.path.join(BASE_DIR, "training_data.pkl")
 ABOUT_PATH = os.path.join(BASE_DIR, "about_you.pkl")
 

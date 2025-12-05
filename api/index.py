@@ -15,7 +15,7 @@ CORS(app)
 # CONFIGURATION
 # ============================================
 
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = 'template'
 ALLOWED_EXTENSIONS = {'pdf', 'ics'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max

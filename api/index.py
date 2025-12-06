@@ -204,7 +204,7 @@ def index():
 
 @app.route('/static/<path:filename>')
 def custom_static(filename):
-    return send_from_directory(STATIC_FOLDER, filename)
+    return send_from_directory(static_dir, filename)
 
 
 @app.route('/api/generate-schedule', methods=['POST'])

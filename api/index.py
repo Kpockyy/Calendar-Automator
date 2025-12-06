@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import json
 import os
@@ -199,7 +199,7 @@ def parse_ics_file(ics_path):
 
 @app.route('/')
 def index():
-    return send_from_directory('templates', 'mains.html')
+    return render_template('mains.html')
 
 
 @app.route('/static/<path:filename>')

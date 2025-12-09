@@ -6,59 +6,51 @@ import re
 import sys
 import pandas as pd
 import numpy as np
+import recurring_ical_events
 from datetime import datetime, timedelta, time as dt_time
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
+# Web Framework & Utils
 from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from whitenoise import WhiteNoise  # <--- NEW IMPORT
+from whitenoise import WhiteNoise
+
+# Data & AI Models
+from sklearn.linear_model import ElasticNet
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, Field
+
+# Calendar Processing
+from icalendar import Calendar as ICalLoader
+from ics import Calendar as IcsCalendar, Event as IcsEvent
 
 # --- CONFIGURATION ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 
-app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
+# Initialize App
+app = Flask(__name__, 
+            template_folder=os.path.join(BASE_DIR, 'templates'), 
+            static_folder=STATIC_DIR)
 CORS(app)
 
-# --- WHITENOISE CONFIGURATION (FIXES CSS/JS ON RAILWAY) ---
-# This forces the app to serve static files from your static folder
+# WhiteNoise (Static file serving)
 app.wsgi_app = WhiteNoise(app.wsgi_app, root=STATIC_DIR, prefix='static/')
 
-# Folders
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+# File System Setup
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB limit
 
-# Files & Secrets
+# Constants
 CSV_PATH = os.path.join(BASE_DIR, 'survey.csv')
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-LOCAL_TZ = ZoneInfo("America/New_York") 
-CHUNK_SIZE = 60 # Minutes per study session
-
-# --- LIBRARIES ---
-try:
-    from sklearn.linear_model import ElasticNet
-except ImportError:
-    sys.exit("CRITICAL: scikit-learn missing. Check requirements.txt")
-
-try:
-    from google import genai
-    from google.genai import types
-    from pydantic import BaseModel, Field
-except ImportError:
-    genai = None
-
-try:
-    from icalendar import Calendar as ICalLoader
-    from ics import Calendar as IcsCalendar, Event as IcsEvent
-    import recurring_ical_events
-except ImportError:
-    sys.exit("CRITICAL: Calendar libs missing. Check requirements.txt")
+LOCAL_TZ = ZoneInfo("America/New_York")
+CHUNK_SIZE = 60
 
 # ==========================================
 # 1. SCHEDULER LOGIC (Integrated v2.0)

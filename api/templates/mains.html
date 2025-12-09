@@ -10,16 +10,20 @@
 <body>
 
     <div class="retro-container">
+        
         <div class="retro-header-section">
             <div class="header-text">
                 <h1>student_os</h1>
                 <p class="subtitle">v2.0 // ai_scheduler_module</p>
             </div>
-            <div class="retro-star-badge"><span>OS</span></div>
+            <div class="retro-star-badge">
+                <span>OS</span>
+            </div>
         </div>
 
         <div class="retro-card">
-            <div class="card-header-pill">Profile</div>
+            <div class="card-header-pill">User Profile</div>
+            
             <div class="grid-2">
                 <div class="field">
                     <label>Graduation Year</label>
@@ -32,13 +36,15 @@
                 </div>
                 <div class="field">
                     <label>Primary Major</label>
-                    <select id="major" class="major-select"><option value="">Loading...</option></select>
+                    <select id="major" class="major-select">
+                        <option value="">Loading Majors...</option>
+                    </select>
                 </div>
             </div>
 
             <div class="schedule-grid" style="margin-top: 25px; padding-top: 20px; border-top: 2px dashed var(--grid-line);">
                 <div class="schedule-column">
-                    <div class="column-label" style="font-weight:bold; margin-bottom:10px;">Weekday Work Hours</div>
+                    <div class="column-label">Weekday Work Hours</div>
                     <div class="field">
                         <label>Start</label>
                         <div class="time-picker" id="weekdayStart" data-default="09:00"></div>
@@ -48,8 +54,9 @@
                         <div class="time-picker" id="weekdayEnd" data-default="21:00"></div>
                     </div>
                 </div>
+
                 <div class="schedule-column">
-                    <div class="column-label" style="font-weight:bold; margin-bottom:10px;">Weekend Work Hours</div>
+                    <div class="column-label">Weekend Work Hours</div>
                     <div class="field">
                         <label>Start</label>
                         <div class="time-picker" id="weekendStart" data-default="10:00"></div>
@@ -64,18 +71,22 @@
 
         <div class="retro-card">
             <div class="card-header-pill">Task Queue</div>
+            
             <div id="assignmentsContainer"></div>
+            
             <button id="addAssignmentBtn" class="btn btn-dashed">+ Add Assignment Node</button>
         </div>
 
         <div class="retro-card">
             <div class="card-header-pill">Data Ingestion</div>
+
             <div class="field">
-                <label>Syllabus PDFs</label>
+                <label>Syllabus PDFs (AI Extraction)</label>
                 <input type="file" id="pdfUpload" multiple accept=".pdf" style="margin-top:5px;">
             </div>
+
             <div class="field" style="margin-top: 25px; padding-top:20px; border-top: 2px dashed var(--grid-line);">
-                <label>Calendar Source (.ics)</label>
+                <label>Calendar Source (.ics) (Busy Times)</label>
                 <input type="file" id="icsUpload" accept=".ics" style="margin-top:5px;">
             </div>
         </div>
@@ -85,9 +96,10 @@
         <div id="resultArea" class="retro-card" style="display:none; text-align:center; border-color: var(--accent-cyan);">
             <div class="card-header-pill" style="background: var(--accent-cyan); color: #fff;">Success</div>
             <h3 style="margin-top:15px;">Optimization Complete</h3>
-            <p>Your schedule has been generated.</p>
+            <p>Your schedule has been generated successfully.</p>
             <a id="downloadLink" href="#" class="btn btn-primary" style="background: var(--accent-cyan); margin-top:15px; display:inline-block; text-decoration:none;">Download .ICS File</a>
         </div>
+
     </div>
 
     <script src="{{ url_for('static', filename='mains.js') }}"></script>

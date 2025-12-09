@@ -1,9 +1,8 @@
-Flask==3.0.0
-flask-cors==4.0.0
-pandas==2.1.4
+Flask
+flask-cors
+pandas
 scikit-learn
 google-genai
 pydantic
-gunicorn==21.2.0
-Werkzeug==3.0.1
-icalendar==5.0.11
+gunicorn
+werkzeug

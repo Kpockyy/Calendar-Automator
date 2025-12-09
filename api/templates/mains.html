@@ -27,12 +27,13 @@
                 <div class="field">
                     <label>Primary Major</label>
                     <select id="major" class="major-select">
-                        <option value="">-- Select --</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Business">Business</option>
                     </select>
                 </div>
             </div>
 
-            <h3 style="margin-top:20px;">Preferred Work Windows</h3>
+            <h3 style="margin-top:20px; font-size:1.1rem; color:#4b5563;">Preferred Work Windows</h3>
             <div class="grid-2">
                 <div class="field">
                     <label>Weekdays (Start - End)</label>
@@ -56,27 +57,27 @@
                 <h2 style="margin:0;">Assignments</h2>
             </div>
             <div id="assignmentsContainer"></div>
-            <button id="addAssignmentBtn" class="btn btn-secondary">+ Add Assignment Node</button>
+            <button id="addAssignmentBtn" class="btn btn-secondary">+ Add Manual Assignment</button>
         </div>
 
         <div class="section">
             <h2>Data Ingestion</h2>
             <div class="field">
-                <label>Syllabus PDFs</label>
+                <label>Syllabus PDFs (Automatic Extraction)</label>
                 <input type="file" id="pdfUpload" multiple accept=".pdf">
             </div>
             <div class="field" style="margin-top: 20px;">
-                <label>Calendar Source (.ics)</label>
+                <label>Your Calendar (.ics) (For Busy Times)</label>
                 <input type="file" id="icsUpload" accept=".ics">
             </div>
         </div>
 
-        <button id="submitBtn" class="btn btn-primary">Initialize Optimization</button>
+        <button id="submitBtn" class="btn btn-primary">Generate Optimized Schedule</button>
         
-        <div id="resultArea" style="margin-top:30px; display:none; text-align:center;">
-            <h3>Success!</h3>
-            <p>Your study schedule is ready.</p>
-            <a id="downloadLink" href="#" class="btn btn-primary" style="background:#10b981; display:inline-block; margin-top:10px;">Download Calendar (.ics)</a>
+        <div id="resultArea" style="margin-top:30px; display:none; text-align:center; padding:20px; background:#f0fdf4; border-radius:12px; border:1px solid #bbf7d0;">
+            <h3 style="color:#166534;">Success!</h3>
+            <p>Your study plan has been generated based on your workload and free time.</p>
+            <a id="downloadLink" href="#" class="btn btn-primary" style="background:#10b981; border:none; display:inline-block; margin-top:10px;">Download Calendar (.ics)</a>
         </div>
     </div>
 

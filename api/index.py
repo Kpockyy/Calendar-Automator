@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from whitenoise import WhiteNoise  # <--- NEW IMPORT
 
 # --- CONFIGURATION ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +22,10 @@ STATIC_DIR = os.path.join(BASE_DIR, 'static')
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
+
+# --- WHITENOISE CONFIGURATION (FIXES CSS/JS ON RAILWAY) ---
+# This forces the app to serve static files from your static folder
+app.wsgi_app = WhiteNoise(app.wsgi_app, root=STATIC_DIR, prefix='static/')
 
 # Folders
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
@@ -358,7 +363,79 @@ def download_file(filename):
 @app.route('/api/generate-schedule', methods=['POST'])
 def generate_schedule():
     try:
-        data_json = request.form.get('data')
-        if not data_json: return jsonify({'error': 'No data'}), 400
+        # 1. Parse JSON data from form
+        data_str = request.form.get('data')
+        if not data_str: return jsonify({'error': 'No data provided'}), 400
         
-        data = json.
+        req_data = json.loads(data_str)
+        survey = req_data.get('survey', {})
+        courses = req_data.get('courses', [])
+        preferences = req_data.get('preferences', {})
+
+        # 2. Handle PDF Uploads (Syllabus Parsing)
+        uploaded_pdfs = request.files.getlist('pdfs')
+        if uploaded_pdfs:
+            for pdf in uploaded_pdfs:
+                if pdf.filename == '': continue
+                filename = secure_filename(pdf.filename)
+                path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                pdf.save(path)
+                
+                # Parse with Gemini
+                df_parsed = parse_syllabus(path)
+                if df_parsed is not None and not df_parsed.empty:
+                    for _, row in df_parsed.iterrows():
+                        courses.append({
+                            'name': f"{row['Course']}: {row['Assignment']}",
+                            'type': map_pdf_category(row['Category']),
+                            'date': row['Date']
+                        })
+
+        # 3. Handle ICS Upload (Busy Times)
+        user_ics_path = None
+        ics_file = request.files.get('ics')
+        if ics_file and ics_file.filename != '':
+            filename = secure_filename(ics_file.filename)
+            user_ics_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            ics_file.save(user_ics_path)
+
+        # 4. Predict Times (ML Model)
+        for c in courses:
+            if model and model_columns:
+                # Build input vector matching training columns
+                input_data = {col: 0 for col in model_columns}
+                
+                # Encode Year
+                y_col = f"year_{survey.get('year')}"
+                if y_col in input_data: input_data[y_col] = 1
+                
+                # Encode Type
+                t_col = f"assignment_type_{c.get('type')}"
+                if t_col in input_data: input_data[t_col] = 1
+
+                # Predict
+                pred = model.predict(pd.DataFrame([input_data]))[0]
+                c['predicted_hours'] = round(max(0.5, pred), 1)
+            else:
+                c['predicted_hours'] = 2.0 # Fallback
+
+        # 5. Run Scheduler
+        output_filename = f"schedule_{int(time.time())}.ics"
+        result_file = run_scheduler_logic(courses, preferences, user_ics_path, output_filename)
+
+        if not result_file:
+            return jsonify({'error': 'Could not generate schedule (no free time?)'}), 400
+
+        # Return Success
+        return jsonify({
+            'message': 'Success',
+            'courses': courses,
+            'ics_url': f"/download/{result_file}"
+        })
+
+    except Exception as e:
+        print(f"API Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

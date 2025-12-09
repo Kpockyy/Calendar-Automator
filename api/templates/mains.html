@@ -3,177 +3,111 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calendar Automator</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='design.css') }}">
+    <title>AI Student Optimizer</title>
+    <link rel="stylesheet" href="mains.css">
 </head>
 <body>
     <div class="container">
-        <h1>📅 Calendar Automator</h1>
-        <p class="subtitle">Organize your academic schedule effortlessly</p>
+        <h1>StudentOS</h1>
+        <p class="subtitle">Optimize your academic schedule with intelligent parsing.</p>
 
-        <!-- Survey Section with Q&A Boxes -->
         <div class="section">
-            <h2 class="section-title">About You</h2>
-            <div class="survey-container">
-                <div class="survey-grid">
-                    <div class="qa-box">
-                        <label for="year">Year</label>
-                        <select id="year">
-                            <option value="">Select year...</option>
-                            <option value="2026">2026</option>
-                            <option value="2027">2027</option>
-                            <option value="2028">2028</option>
-                            <option value="2029">2029</option>
-                        </select>
-                    </div>
+            <h2>Personal Metrics</h2>
+            
+            <div class="grid-2">
+                <div class="field">
+                    <label>Graduation Year</label>
+                    <select id="studentYear">
+                        <option value="2026">2026</option>
+                        <option value="2027">2027</option>
+                        <option value="2028">2028</option>
+                        <option value="2029">2029</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Primary Major</label>
+                    <select id="major" class="major-select">
+                        <option value="">-- Select --</option>
+                    </select>
+                </div>
+            </div>
 
-                    <div class="qa-box">
-                        <label for="major">Major</label>
-                        <select id="major">
-                            <option value="">Select major...</option>
-                            <option value="business">Business</option>
-                            <option value="stem">STEM</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
+            <div class="grid-2">
+                <div class="field">
+                    <label>Secondary Concentration</label>
+                    <select id="secondMajor" class="major-select">
+                        <option value="N/A">None / Not Applicable</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Minor</label>
+                    <select id="minor" class="major-select">
+                        <option value="N/A">None / Not Applicable</option>
+                    </select>
+                </div>
+            </div>
 
-                    <div class="qa-box">
-                        <label for="workInGroup">Work in Group?</label>
-                        <select id="workInGroup">
-                            <option value="">Select...</option>
-                            <option value="yes">Yes</option>
-                            <option value="no">No</option>
-                            <option value="sometimes">Sometimes</option>
-                        </select>
-                    </div>
+            <div style="border-top: 1px solid #2d2d33; margin: 20px 0;"></div>
 
-                    <div class="qa-box">
-                        <label for="workLocation">Preferred Working Location</label>
-                        <select id="workLocation">
-                            <option value="">Select location...</option>
-                            <option value="library">Library</option>
-                            <option value="home">Home</option>
-                            <option value="cafe">Café</option>
-                            <option value="study-room">Study Room</option>
-                            <option value="dorm">Dorm</option>
-                            <option value="other">Other</option>
-                        </select>
+            <div class="grid-2">
+                <div>
+                    <label style="color:#8b5cf6; margin-bottom:10px; display:block;">Weekday Schedule</label>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label>Wake Up</label>
+                            <input type="time" id="wakeWeekday">
+                        </div>
+                        <div class="field">
+                            <label>Sleep</label>
+                            <input type="time" id="sleepWeekday">
+                        </div>
                     </div>
-
-                    <div class="qa-box">
-                        <label>Preferred Working Time (Drag to Rank)</label>
-                        <div class="ranking-inputs" id="rankingContainer">
-                            <div class="ranking-item" draggable="true" data-time="morning">
-                                <span class="drag-handle">☰</span>
-                                <span>Morning</span>
-                            </div>
-                            <div class="ranking-item" draggable="true" data-time="afternoon">
-                                <span class="drag-handle">☰</span>
-                                <span>Afternoon</span>
-                            </div>
-                            <div class="ranking-item" draggable="true" data-time="evening">
-                                <span class="drag-handle">☰</span>
-                                <span>Evening</span>
-                            </div>
+                </div>
+                <div>
+                    <label style="color:#06b6d4; margin-bottom:10px; display:block;">Weekend Schedule</label>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label>Wake Up</label>
+                            <input type="time" id="wakeWeekend">
+                        </div>
+                        <div class="field">
+                            <label>Sleep</label>
+                            <input type="time" id="sleepWeekend">
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Course Input Table -->
         <div class="section">
-            <h2 class="section-title">Your Courses</h2>
-            <div class="table-container">
-                <table id="courseTable">
-                    <thead>
-                        <tr>
-                            <th style="width: 6%;">#</th>
-                            <th style="width: 14%;">Type</th>
-                            <th style="width: 14%;">Class Major</th>
-                            <th style="width: 18%;">Class Name</th>
-                            <th style="width: 18%;">Assignment Name</th>
-                            <th style="width: 12%;">Sessions</th>
-                            <th style="width: 10%;">Resources</th>
-                            <th style="width: 8%;">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="courseTableBody">
-                        <tr>
-                            <td>1</td>
-                            <td>
-                                <select>
-                                    <option value="" selected></option>
-                                    <option value="assignment">Assignment</option>
-                                    <option value="writing">Writing</option>
-                                    <option value="lab">Lab</option>
-                                    <option value="project">Project</option>
-                                    <option value="others">Others</option>
-                                </select>
-                            </td>
-                            <td>
-                                <select>
-                                    <option value="" selected></option>
-                                    <option value="business">Business</option>
-                                    <option value="stem">STEM</option>
-                                    <option value="humanities">Humanities</option>
-                                    <option value="arts">Arts</option>
-                                    <option value="others">Others</option>
-                                </select>
-                            </td>
-                            <td>
-                                <input type="text" placeholder="">
-                            </td>
-                            <td>
-                                <input type="text" placeholder="">
-                            </td>
-                            <td>
-                                <select>
-                                    <option value="" selected></option>
-                                    <option value="1-2">1-2</option>
-                                    <option value="3-5">3-5</option>
-                                    <option value="6-10">6-10</option>
-                                    <option value="10+">10+</option>
-                                </select>
-                            </td>
-                            <td>
-                                <select>
-                                    <option value="" selected></option>
-                                    <option value="textbook">Textbook</option>
-                                    <option value="google">Google</option>
-                                    <option value="ai">AI</option>
-                                    <option value="mixed">Mixed</option>
-                                </select>
-                            </td>
-                            <td>
-                                <button class="delete-btn" onclick="deleteRow(this)">Delete</button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h2 style="margin:0;">Assignments</h2>
+                <span style="font-size:0.8rem; color:var(--text-muted)">Add typical tasks below</span>
             </div>
-            <button class="add-row-btn" onclick="addRow()">Add Course</button>
+            
+            <div id="assignmentsContainer"></div>
+            
+            <button id="addAssignmentBtn" class="btn btn-secondary">+ Add Assignment Node</button>
         </div>
 
-        <!-- File Uploads -->
         <div class="section">
-            <h2 class="section-title">Upload Files</h2>
+            <h2>Data Ingestion</h2>
             
-            <div class="file-input-wrapper">
-                <label for="pdfUpload">📄 Upload Syllabus PDFs</label>
-                <input type="file" id="pdfUpload" accept=".pdf" multiple>
+            <div class="field">
+                <label>Syllabus PDFs</label>
+                <div id="syllabusContainer"></div>
+                <button id="addSyllabusBtn" class="btn btn-secondary" style="margin-top:10px; border-style:dashed;">+ Attach Syllabus</button>
             </div>
 
-            <div class="file-input-wrapper">
-                <label for="icsUpload">📆 Import Calendar (ICS)</label>
+            <div class="field" style="margin-top: 30px;">
+                <label>Calendar Source (.ics)</label>
                 <input type="file" id="icsUpload" accept=".ics">
             </div>
         </div>
 
-        <!-- Submit Button -->
-        <button class="submit-btn">Generate My Schedule ✨</button>
+        <button id="submitBtn" class="btn btn-primary">Initialize Optimization</button>
     </div>
 
-    <script src="{{url_for('static', filename='interact.js')}}"></script>
+    <script src="mains.js"></script>
 </body>
 </html>

@@ -12,11 +12,29 @@ import time
 from datetime import datetime
 from typing import List, Optional
 
-# Third-party Imports
-from pydantic import BaseModel, Field
-from google import genai
-from google.genai import types
-from sklearn.linear_model import ElasticNet
+# --- DEFENSIVE IMPORTS ---
+# We wrap these to prevent the server from crashing immediately if a lib is missing
+import_errors = []
+
+try:
+    from sklearn.linear_model import ElasticNet
+except ImportError as e:
+    ElasticNet = None
+    import_errors.append(f"sklearn: {str(e)}")
+
+try:
+    from pydantic import BaseModel, Field
+except ImportError as e:
+    BaseModel, Field = object, None # Dummies
+    import_errors.append(f"pydantic: {str(e)}")
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError as e:
+    genai = None
+    import_errors.append(f"google-genai: {str(e)}")
+
 
 # ============================================
 # 1. CONFIGURATION & PATHS
@@ -41,54 +59,61 @@ TRAINING_PATH = os.path.join(UPLOAD_FOLDER, "training_data.pkl")
 ABOUT_PATH = os.path.join(UPLOAD_FOLDER, "about_you.pkl")
 MASTER_SCHEDULE_PATH = os.path.join(UPLOAD_FOLDER, "MASTER_Schedule.pkl")
 
-# API Key for Gemini (Must be set in Vercel Environment Variables)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-
 # ============================================
-# 2. GLOBAL CSV LOADING (Your Request)
+# 2. GLOBAL CSV LOADING
 # ============================================
-# This runs once per server instance (Cold Start)
 
-csv_path = os.path.join(current_directory, 'Student Assignment Survey v2 2.csv')
+csv_filename = 'Student Assignment Survey v2 2.csv'
+csv_path = os.path.join(current_directory, csv_filename)
 global_df = pd.DataFrame()
+csv_status = "Not Loaded"
 
 try:
     if os.path.exists(csv_path):
         global_df = pd.read_csv(csv_path)
-        print(f"✅ CSV loaded successfully from {csv_path}!")
+        csv_status = f"Loaded {len(global_df)} rows"
+        print(f"✅ CSV loaded: {csv_path}")
     else:
-        print(f"❌ CRITICAL: CSV not found at {csv_path}")
+        csv_status = f"Missing File at {csv_path}"
+        print(f"❌ CSV not found: {csv_path}")
 except Exception as e:
-    print(f"❌ Failed to load CSV: {e}")
-
+    csv_status = f"Error: {str(e)}"
+    print(f"❌ CSV Error: {e}")
 
 # ==========================================
-# 3. PDF PARSER MODELS & HELPERS
+# 3. PDF PARSER (Defined only if imports worked)
 # ==========================================
 
-class MeetingSchedule(BaseModel):
-    days: List[str] = Field(description="List of days (e.g., ['Monday', 'Wednesday']).")
-    start_time: str = Field(description="The START time of the class ONLY (e.g. '11:00 AM').")
+# Dummy classes if import failed to prevent NameError later
+if not genai or not BaseModel:
+    class MeetingSchedule: pass
+    class AssignmentItem: pass
+    class CourseMetadata: pass
+    class SyllabusResponse: pass
+else:
+    class MeetingSchedule(BaseModel):
+        days: List[str] = Field(description="List of days.")
+        start_time: str = Field(description="Start time (e.g. '11:00 AM').")
 
-class AssignmentItem(BaseModel):
-    date: str = Field(description="The due date in 'YYYY-MM-DD' format.")
-    time: Optional[str] = Field(description="Specific deadline if explicitly written (e.g. '11:59 PM'). Otherwise null.")
-    assignment_name: str = Field(description="Concise name.")
-    category: str = Field(description="Category: 'Reading', 'Writing', 'Exam', 'Project', 'Presentation', 'Other'.")
-    description: str = Field(description="Details. If exam, include duration here. If readings, bullet points.")
+    class AssignmentItem(BaseModel):
+        date: str = Field(description="YYYY-MM-DD")
+        time: Optional[str] = Field(description="11:59 PM or specific")
+        assignment_name: str = Field(description="Name")
+        category: str = Field(description="Category")
+        description: str = Field(description="Details")
 
-class CourseMetadata(BaseModel):
-    course_name: str = Field(description="Name of the course.")
-    semester_year: str = Field(description="Semester and Year (e.g., 'Fall 2025').")
-    class_meetings: List[MeetingSchedule] = Field(description="The weekly schedule.")
+    class CourseMetadata(BaseModel):
+        course_name: str = Field(description="Course Name")
+        semester_year: str = Field(description="Term")
+        class_meetings: List[MeetingSchedule] = Field(description="Schedule")
 
-class SyllabusResponse(BaseModel):
-    metadata: CourseMetadata
-    assignments: List[AssignmentItem]
+    class SyllabusResponse(BaseModel):
+        metadata: CourseMetadata
+        assignments: List[AssignmentItem]
 
 def standardize_time(time_str):
-    """Parses messy times into 'HH:MM AM/PM'."""
     if not time_str: return None
     clean = re.split(r'\s*[-–]\s*|\s+to\s+', str(time_str))[0].strip()
     for fmt in ["%I:%M %p", "%I %p", "%H:%M", "%I:%M%p"]:
@@ -104,7 +129,6 @@ def standardize_time(time_str):
     return clean
 
 def resolve_time(row, schedule_map):
-    """Prioritizes explicit deadlines -> class time -> 11:59 PM."""
     existing_time = row['Time']
     if existing_time and any(char.isdigit() for char in str(existing_time)):
         return standardize_time(existing_time)
@@ -115,36 +139,31 @@ def resolve_time(row, schedule_map):
     return schedule_map.get(day_name, "11:59 PM")
 
 def parse_syllabus(file_path):
-    """Uploads PDF to Gemini and extracts structured data."""
+    # Safety Check
+    if not genai:
+        print("❌ Parsing skipped: google-genai lib missing.")
+        return None
     if not GEMINI_API_KEY:
-        print("❌ Error: GEMINI_API_KEY not found.")
+        print("❌ Parsing skipped: No API Key.")
         return None
 
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    filename = os.path.basename(file_path)
-    print(f"🤖 Processing PDF: {filename}...")
-
     try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        filename = os.path.basename(file_path)
+        print(f"🤖 Processing PDF: {filename}...")
+
         file_upload = client.files.upload(file=file_path)
-        # Wait for processing
         while file_upload.state.name == "PROCESSING":
             time.sleep(1)
             file_upload = client.files.get(name=file_upload.name)
         
         if file_upload.state.name != "ACTIVE":
-            print(f"❌ Error: File {filename} not active.")
             return None
 
         prompt = """
         Analyze this syllabus for Calendar Import.
-        PHASE 1: METADATA
-        - Extract Course Name.
-        - **Class Schedule:** Extract Days and **START TIME ONLY**.
-        PHASE 2: ASSIGNMENTS
-        - Extract deliverables and readings.
-        - **Dates:** YYYY-MM-DD.
-        - **Times:** Leave time NULL unless a specific deadline is written.
-        - **Exams:** If "In Class", leave time NULL.
+        PHASE 1: METADATA (Course Name, Class Schedule with START TIME).
+        PHASE 2: ASSIGNMENTS (Deliverables, Readings, Dates YYYY-MM-DD).
         """
 
         response = client.models.generate_content(
@@ -158,7 +177,6 @@ def parse_syllabus(file_path):
         
         data: SyllabusResponse = response.parsed
         
-        # Build schedule map
         schedule_map = {}
         for meeting in data.metadata.class_meetings:
             std_time = standardize_time(meeting.start_time)
@@ -185,9 +203,8 @@ def parse_syllabus(file_path):
             df['Time'] = df.apply(lambda row: resolve_time(row, schedule_map), axis=1)
 
         return df
-
     except Exception as e:
-        print(f"❌ Error parsing {filename}: {e}")
+        print(f"❌ Error parsing PDF: {e}")
         return None
 
 def map_pdf_category_to_model(pdf_category):
@@ -199,12 +216,14 @@ def map_pdf_category_to_model(pdf_category):
     if 'exam' in cat: return 'p_set' 
     return 'p_set' 
 
+
 # ==========================================
-# 4. ML MODEL & MAPPINGS
+# 4. ML MODEL INITIALIZATION
 # ==========================================
 
 model = None
 model_columns = []
+model_status = "Not Initialized"
 
 new_column_names = {
     'What year are you? ': 'year',
@@ -281,17 +300,18 @@ work_location_mapping = {
 def initialize_model():
     global model
     global model_columns
-    print("🤖 Initializing ML model from Global DF...")
+    global model_status
+
+    if ElasticNet is None:
+        model_status = "Skipped (sklearn missing)"
+        return
     
     if global_df.empty:
-        print("CRITICAL: Global DataFrame is empty. Model cannot train.")
+        model_status = "Skipped (CSV missing)"
         return
 
     try:
-        # Create a copy so we don't mutate the global raw data
         survey_df = global_df.copy()
-        
-        # Rename & Clean
         survey_df = survey_df.rename(columns=new_column_names)
         
         survey_df['major_category'] = survey_df['major'].map(category_mapping)
@@ -322,28 +342,26 @@ def initialize_model():
         model.fit(X, y)
         
         model_columns = list(X.columns)
+        model_status = "Trained Successfully"
         print("✅ Model trained and ready.")
         
     except Exception as e:
+        model_status = f"Error: {e}"
         print(f"❌ Model initialization failed: {e}")
 
 initialize_model()
 
+
 # ============================================
-# 5. DATA STORAGE
+# 5. DATA STORE
 # ============================================
 
 class SimpleDataStore:
     def __init__(self, data_file=TRAINING_PATH, about_file=ABOUT_PATH):
         self.data_file = data_file
         self.about_file = about_file
-        self.df = self._load_df(self.data_file)
-        self.about_df = self._load_df(self.about_file)
-    
-    def _load_df(self, path):
-        if os.path.exists(path):
-            return pd.read_pickle(path)
-        return pd.DataFrame()
+        self.df = pd.DataFrame()
+        self.about_df = pd.DataFrame()
     
     def save_submission(self, survey, courses, pdf_filenames, ics_filenames):
         timestamp = datetime.now().isoformat()
@@ -351,36 +369,20 @@ class SimpleDataStore:
             'timestamp': timestamp,
             'year': survey.get('year'),
             'major': survey.get('major'),
-            'work_in_group': survey.get('workInGroup'),
-            'work_location': survey.get('workLocation'),
-            'min_work_time': survey.get('minWorkTime'),
-            'max_work_time': survey.get('maxWorkTime'),
             'num_courses': len(courses),
             'courses_json': json.dumps(courses),
             'pdf_files': json.dumps(pdf_filenames),
             'ics_files': json.dumps(ics_filenames)
         }
         
-        about_row = {
-            'timestamp': timestamp,
-            'year': new_row['year'],
-            'major': new_row['major'],
-            'work_in_group': new_row['work_in_group'],
-            'work_location': new_row['work_location'],
-        }
-        
         self.df = pd.DataFrame([new_row])
-        self.about_df = pd.DataFrame([about_row])
-        
         self.df.to_pickle(self.data_file)
-        self.about_df.to_pickle(self.about_file)
         return 0
 
     def get_dataframe(self):
-        return self.df.copy()
-        
-    def get_about_dataframe(self):
-        return self.about_df.copy()
+        if os.path.exists(self.data_file):
+            return pd.read_pickle(self.data_file)
+        return pd.DataFrame()
 
 data_store = SimpleDataStore()
 
@@ -393,7 +395,7 @@ def process_and_predict(survey, courses):
     global model_columns
     
     if not model or not courses:
-        return []
+        return [0.0] * len(courses)
 
     rows = []
     for course in courses:
@@ -446,14 +448,13 @@ def process_and_predict(survey, courses):
 
 @app.route('/', methods=['GET'])
 def home():
-    # Return the HEAD of the dataframe to prove loading worked
-    if global_df.empty:
-        return jsonify({"error": "Data not loaded"}), 500
-    
-    # Returning the first 5 rows as JSON (per your request)
+    # DIAGNOSTIC HOME PAGE
     return jsonify({
-        "status": "API Running",
-        "csv_preview": global_df.head().to_dict(orient='records')
+        "status": "API Online",
+        "csv_status": csv_status,
+        "model_status": model_status,
+        "import_errors": import_errors,
+        "gemini_key_present": bool(GEMINI_API_KEY)
     })
 
 @app.route('/static/<path:filename>')
@@ -464,14 +465,13 @@ def custom_static(filename):
 def generate_schedule():
     try:
         data_json = request.form.get('data')
-        if not data_json:
-            return jsonify({'error': 'No data provided'}), 400
+        if not data_json: return jsonify({'error': 'No data'}), 400
         
         data = json.loads(data_json)
         survey = data.get('survey', {})
-        manual_courses = data.get('courses', []) # Courses manually entered by user
-
-        # 1. Handle PDF Uploads & Parsing
+        manual_courses = data.get('courses', [])
+        
+        # 1. Handle PDF
         pdf_filenames = []
         pdf_extracted_courses = []
         
@@ -485,9 +485,8 @@ def generate_schedule():
                     pdf_filenames.append(filename)
                     files_to_parse.append(filepath)
 
-            # Trigger Gemini Parser if Key Exists
-            if files_to_parse and GEMINI_API_KEY:
-                print(f"📄 Parsing {len(files_to_parse)} PDFs...")
+            # Only run parser if no import errors
+            if files_to_parse and genai and GEMINI_API_KEY:
                 all_pdf_dfs = []
                 for fpath in files_to_parse:
                     df_parsed = parse_syllabus(fpath)
@@ -496,25 +495,20 @@ def generate_schedule():
                 
                 if all_pdf_dfs:
                     master_pdf_df = pd.concat(all_pdf_dfs, ignore_index=True)
-                    master_pdf_df.to_pickle(MASTER_SCHEDULE_PATH)
-                    master_pdf_df.to_excel(os.path.join(UPLOAD_FOLDER, "MASTER_Schedule.xlsx"), index=False)
-                    
+                    # Convert to course objects...
                     for _, row in master_pdf_df.iterrows():
-                        assignment_obj = {
+                        pdf_extracted_courses.append({
                             'name': f"{row['Course']} - {row['Assignment']}",
-                            'type': map_pdf_category_to_model(row['Category']), 
-                            'subject': survey.get('major'), 
-                            'resources': 'Google/internet', 
+                            'type': map_pdf_category_to_model(row['Category']),
+                            'subject': survey.get('major'),
+                            'resources': 'Google/internet',
                             'date': row['Date'],
                             'time': row['Time'],
                             'description': row['Description'],
                             'source': 'pdf_parser'
-                        }
-                        pdf_extracted_courses.append(assignment_obj)
-            elif files_to_parse and not GEMINI_API_KEY:
-                print("⚠️ PDFs uploaded but GEMINI_API_KEY is missing. Skipping parse.")
+                        })
 
-        # 2. Handle ICS (Store Only)
+        # 2. Handle ICS
         ics_filenames = []
         if 'ics' in request.files:
             ics_file = request.files['ics']
@@ -523,14 +517,10 @@ def generate_schedule():
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 ics_file.save(filepath)
                 ics_filenames.append(filename)
-        
-        # 3. Combine Manual + PDF Courses
+
         all_courses = manual_courses + pdf_extracted_courses
-        
-        # 4. Store Data
         data_store.save_submission(survey, all_courses, pdf_filenames, ics_filenames)
         
-        # 5. PREDICT & MERGE
         predicted_times = process_and_predict(survey, all_courses)
         
         courses_with_predictions = []
@@ -541,31 +531,26 @@ def generate_schedule():
             else:
                 c_copy['predicted_hours'] = 0
             courses_with_predictions.append(c_copy)
-        
+            
         return jsonify({
             'status': 'success',
-            'message': 'Data stored, syllabi parsed, and predictions generated.',
             'courses': courses_with_predictions,
-            'pdf_parsed_count': len(pdf_extracted_courses)
+            'debug_info': {
+                'pdf_parsed': bool(genai and GEMINI_API_KEY),
+                'model_active': bool(model)
+            }
         }), 200
-    
+
     except Exception as e:
-        print(f"Error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/view-data', methods=['GET'])
 def view_data():
-    df = data_store.get_dataframe()
-    return jsonify({'status': 'success', 'data': df.to_dict('records')})
-
-@app.route('/api/view-about', methods=['GET'])
-def view_about():
-    about_df = data_store.get_about_dataframe()
-    return jsonify({'status': 'success', 'data': about_df.to_dict('records')})
+    return jsonify({'status': 'success', 'data': data_store.get_dataframe().to_dict('records')})
 
 @app.route('/api/health')
 def health():
-    return jsonify({'status': 'healthy', 'rows_loaded': len(global_df)})
+    return jsonify({'status': 'healthy'})
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS

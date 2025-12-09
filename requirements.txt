@@ -1,9 +1,11 @@
 Flask
 flask-cors
 pandas
-numpy
 scikit-learn
 google-genai
 pydantic
 gunicorn
 werkzeug
+ics
+icalendar
+recurring-ical-events

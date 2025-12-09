@@ -3,26 +3,55 @@ import json
 import time
 import re
 import sys
+import math
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta, time as dt_time
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
-# --- IMPORT SCHEDULER ---
-import scheduler
+# --- DEFENSIVE IMPORTS ---
+errors = []
 
-# --- CONFIGURATION ---
+try:
+    from sklearn.linear_model import ElasticNet
+except ImportError as e:
+    ElasticNet = None
+    errors.append(f"Scikit-learn missing: {e}")
+
+try:
+    from google import genai
+    from google.genai import types
+    from pydantic import BaseModel, Field
+except ImportError as e:
+    genai = None
+    BaseModel = object 
+    errors.append(f"Google GenAI missing: {e}")
+
+try:
+    from icalendar import Calendar as ICalLoader
+    from ics import Calendar as IcsCalendar, Event as IcsEvent
+    import recurring_ical_events
+except ImportError as e:
+    ICalLoader = None
+    errors.append(f"Calendar libs missing: {e}")
+
+# ============================================
+# 1. CONFIGURATION
+# ============================================
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-template_dir = os.path.join(BASE_DIR, 'templates')
-static_dir = os.path.join(BASE_DIR, 'static')
+template_dir = os.path.join(BASE_DIR, 'templates') if os.path.exists(os.path.join(BASE_DIR, 'templates')) else None
+static_dir = os.path.join(BASE_DIR, 'static') if os.path.exists(os.path.join(BASE_DIR, 'static')) else None
 
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 CORS(app)
 
+# Folders
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 DATA_FOLDER = os.path.join(BASE_DIR, 'data')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -31,26 +60,35 @@ os.makedirs(DATA_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024
 
+# Files & Secrets
 CSV_PATH = os.path.join(BASE_DIR, 'survey.csv')
+TRAINING_PKL = os.path.join(DATA_FOLDER, "training_data.pkl")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+LOCAL_TZ = ZoneInfo("America/New_York") 
+CHUNK_SIZE = 60 
 
-# --- LIBRARIES ---
-try:
-    from sklearn.linear_model import ElasticNet
-except ImportError:
-    ElasticNet = None
+# ============================================
+# 2. DATA MODELS
+# ============================================
 
-try:
-    from google import genai
-    from google.genai import types
-    from pydantic import BaseModel, Field
-except ImportError:
-    genai = None
+if genai:
+    class AssignmentItem(BaseModel):
+        date: str = Field(description="YYYY-MM-DD")
+        time: Optional[str] = Field(description="Deadline time or null")
+        assignment_name: str = Field(description="Name")
+        category: str = Field(description="Category")
+        description: str = Field(description="Details")
 
-# --- HELPER FUNCTIONS ---
+    class SyllabusResponse(BaseModel):
+        metadata: dict = Field(description="Metadata")
+        assignments: List[AssignmentItem]
+
+# ============================================
+# 3. HELPER FUNCTIONS
+# ============================================
+
 def standardize_time(time_str):
     if not time_str: return None
-    import re
     clean = re.split(r'\s*[-–]\s*|\s+to\s+', str(time_str))[0].strip()
     for fmt in ["%I:%M %p", "%I %p", "%H:%M", "%I:%M%p"]:
         try: return datetime.strptime(clean, fmt).strftime("%I:%M %p")
@@ -70,21 +108,191 @@ def map_pdf_category(cat):
     if 'project' in c: return 'research_paper'
     return 'p_set'
 
+# ============================================
+# 4. SCHEDULER LOGIC (Integrated)
+# ============================================
+
+def parse_user_ics_busy_times(ics_path, start_date, end_date):
+    if not ICalLoader: return [] 
+    busy = []
+    if not ics_path or not os.path.exists(ics_path):
+        return busy
+
+    try:
+        with open(ics_path, 'rb') as f:
+            cal = ICalLoader.from_ical(f.read())
+        
+        events = recurring_ical_events.of(cal).between(start_date, end_date)
+        for ev in events:
+            dtstart = ev.get('DTSTART').dt
+            dtend = ev.get('DTEND').dt
+            
+            # Normalize to datetime
+            if not isinstance(dtstart, datetime): 
+                dtstart = datetime.combine(dtstart, dt_time.min).replace(tzinfo=LOCAL_TZ)
+            if not isinstance(dtend, datetime):
+                dtend = datetime.combine(dtend, dt_time.max).replace(tzinfo=LOCAL_TZ)
+            
+            # Normalize TZ
+            if dtstart.tzinfo is None: dtstart = dtstart.replace(tzinfo=LOCAL_TZ)
+            else: dtstart = dtstart.astimezone(LOCAL_TZ)
+            
+            if dtend.tzinfo is None: dtend = dtend.replace(tzinfo=LOCAL_TZ)
+            else: dtend = dtend.astimezone(LOCAL_TZ)
+            
+            busy.append((dtstart, dtend))
+    except Exception as e:
+        print(f"ICS Parse Error: {e}")
+    
+    return busy
+
+def generate_free_blocks(start_date, end_date, preferences, busy_blocks):
+    if 'pandas' not in sys.modules: return pd.DataFrame()
+    
+    free_blocks = []
+    current_day = start_date.date()
+    end_date_date = end_date.date()
+    
+    busy_blocks.sort(key=lambda x: x[0])
+
+    while current_day <= end_date_date:
+        is_weekend = current_day.weekday() >= 5
+        
+        if is_weekend:
+            s_str = preferences.get('weekendStart', '10:00')
+            e_str = preferences.get('weekendEnd', '20:00')
+        else:
+            s_str = preferences.get('weekdayStart', '09:00')
+            e_str = preferences.get('weekdayEnd', '22:00')
+
+        try:
+            sh, sm = map(int, s_str.split(':'))
+            eh, em = map(int, e_str.split(':'))
+        except:
+            sh, sm, eh, em = 9, 0, 21, 0
+
+        day_start = datetime.combine(current_day, dt_time(sh, sm)).replace(tzinfo=LOCAL_TZ)
+        day_end = datetime.combine(current_day, dt_time(eh, em)).replace(tzinfo=LOCAL_TZ)
+
+        current_pointer = day_start
+        day_busy = [b for b in busy_blocks if b[1] > day_start and b[0] < day_end]
+
+        for b_start, b_end in day_busy:
+            b_start = max(b_start, day_start)
+            b_end = min(b_end, day_end)
+
+            if b_start > current_pointer:
+                dur = (b_start - current_pointer).total_seconds() / 60
+                if dur >= 30:
+                    free_blocks.append({'start': current_pointer, 'end': b_start, 'duration': dur})
+            current_pointer = max(current_pointer, b_end)
+
+        if current_pointer < day_end:
+            dur = (day_end - current_pointer).total_seconds() / 60
+            if dur >= 30:
+                free_blocks.append({'start': current_pointer, 'end': day_end, 'duration': dur})
+
+        current_day += timedelta(days=1)
+    
+    return pd.DataFrame(free_blocks)
+
+def run_scheduler_logic(courses, preferences, user_ics_path, output_filename):
+    if not IcsCalendar or 'pandas' not in sys.modules:
+        return None 
+
+    now = datetime.now(LOCAL_TZ)
+    end_horizon = now + timedelta(days=90)
+
+    # 1. Get Free Time
+    busy = parse_user_ics_busy_times(user_ics_path, now, end_horizon)
+    free_df = generate_free_blocks(now, end_horizon, preferences, busy)
+
+    if free_df.empty:
+        print("Scheduler: No free time found.")
+        return None
+
+    # 2. Prepare Sessions
+    sessions = []
+    for c in courses:
+        try:
+            d_str = c.get('date')
+            if not d_str: continue
+            
+            due_dt = datetime.strptime(d_str, '%Y-%m-%d').replace(tzinfo=LOCAL_TZ)
+            due_dt = due_dt.replace(hour=23, minute=59)
+
+            hours = float(c.get('predicted_hours', 1.0))
+            if hours <= 0: hours = 0.5
+
+            total_mins = int(hours * 60)
+            num_chunks = math.ceil(total_mins / CHUNK_SIZE)
+
+            for i in range(num_chunks):
+                dur = min(CHUNK_SIZE, total_mins - (i*CHUNK_SIZE))
+                sessions.append({
+                    'name': c['name'],
+                    'due': due_dt,
+                    'duration': dur,
+                    'uid': f"{c['name']}_{i}"
+                })
+        except Exception as e:
+            print(f"Error prepping course {c.get('name')}: {e}")
+
+    sessions.sort(key=lambda x: x['due'])
+
+    # 3. Allocate
+    scheduled_events = []
+    for sess in sessions:
+        valid = free_df[
+            (free_df['start'] >= now) & 
+            (free_df['end'] <= sess['due']) & 
+            (free_df['duration'] >= sess['duration'])
+        ]
+
+        if not valid.empty:
+            idx = valid.index[0]
+            block = free_df.loc[idx]
+
+            start_t = block['start']
+            end_t = start_t + timedelta(minutes=sess['duration'])
+
+            scheduled_events.append({
+                'name': f"Study: {sess['name']}",
+                'begin': start_t,
+                'end': end_t
+            })
+
+            new_start = end_t
+            new_dur = (block['end'] - new_start).total_seconds() / 60
+            
+            if new_dur >= 30:
+                free_df.at[idx, 'start'] = new_start
+                free_df.at[idx, 'duration'] = new_dur
+            else:
+                free_df.drop(idx, inplace=True)
+
+    # 4. Generate ICS
+    cal = IcsCalendar()
+    for ev in scheduled_events:
+        e = IcsEvent()
+        e.name = ev['name']
+        e.begin = ev['begin']
+        e.end = ev['end']
+        cal.events.add(e)
+    
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+    with open(output_path, 'w') as f:
+        f.writelines(cal.serialize_iter())
+    
+    return output_filename
+
+# ============================================
+# 5. CORE LOGIC (Parser + ML)
+# ============================================
+
 def parse_syllabus(file_path):
     if not genai or not GEMINI_API_KEY: return None
     try:
-        # Define Models inline to avoid import errors if lib missing
-        class AssignmentItem(BaseModel):
-            date: str = Field(description="YYYY-MM-DD")
-            time: Optional[str] = Field(description="Deadline time or null")
-            assignment_name: str = Field(description="Name")
-            category: str = Field(description="Category")
-            description: str = Field(description="Details")
-
-        class SyllabusResponse(BaseModel):
-            metadata: dict = Field(description="Metadata")
-            assignments: List[AssignmentItem]
-
         client = genai.Client(api_key=GEMINI_API_KEY)
         file_upload = client.files.upload(file=file_path)
         while file_upload.state.name == "PROCESSING":
@@ -108,12 +316,15 @@ def parse_syllabus(file_path):
         print(f"Parsing error: {e}")
         return None
 
-# --- ML MODEL ---
 model = None
 model_columns = []
 def initialize_model():
     global model, model_columns
-    if not ElasticNet or not os.path.exists(CSV_PATH): return
+    if not ElasticNet or 'pandas' not in sys.modules: return
+    
+    if not os.path.exists(CSV_PATH):
+        print(f"CSV Not Found at {CSV_PATH}")
+        return
     try:
         df = pd.read_csv(CSV_PATH)
         df = df.rename(columns={'What year are you? ': 'year', 'What is your major/concentration?': 'major', 'What type of assignment was it?': 'assignment_type', 'Approximately how long did it take (in hours)': 'time_spent_hours'})
@@ -132,12 +343,14 @@ def initialize_model():
 
 initialize_model()
 
-# --- ROUTES ---
+# ============================================
+# 6. API ROUTES
+# ============================================
 
 @app.route('/', methods=['GET'])
 def home():
-    # THIS LINE WAS THE FIX: RENDER HTML INSTEAD OF JSON
-    return render_template('mains.html') 
+    if template_dir: return render_template('mains.html')
+    return "Server Online"
 
 @app.route('/download/<filename>')
 def download_file(filename):
@@ -145,6 +358,9 @@ def download_file(filename):
 
 @app.route('/api/generate-schedule', methods=['POST'])
 def generate_schedule():
+    if errors:
+        return jsonify({'error': 'Server has missing dependencies', 'details': errors}), 500
+
     try:
         data_json = request.form.get('data')
         if not data_json: return jsonify({'error': 'No data'}), 400
@@ -198,15 +414,14 @@ def generate_schedule():
                 except: pass
             course['predicted_hours'] = max(0.5, round(predicted, 2))
 
-        # 4. RUN SCHEDULER (Version 2.0 Logic)
+        # 4. Generate Final Schedule
         output_ics = f"study_plan_{int(time.time())}.ics"
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_ics)
         
-        generated_file = scheduler.create_schedule(
+        generated_file = run_scheduler_logic(
             courses=all_courses,
             preferences=preferences,
             user_ics_path=user_ics_path,
-            output_path=output_path
+            output_filename=output_ics
         )
 
         response = {

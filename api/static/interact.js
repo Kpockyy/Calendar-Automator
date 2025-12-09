@@ -1,8 +1,7 @@
-/* --- Submit Logic --- */
 document.getElementById('submitBtn').addEventListener('click', async () => {
     const btn = document.getElementById('submitBtn');
     const originalText = btn.textContent;
-    btn.textContent = "Processing AI Models...";
+    btn.textContent = "Processing...";
     btn.disabled = true;
 
     // 1. Survey Data
@@ -11,7 +10,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
         major: document.getElementById('major').value
     };
 
-    // 2. Preferences (Work Windows)
+    // 2. Preferences
     const preferences = {
         weekdayStart: document.getElementById('weekdayStart').value,
         weekdayEnd: document.getElementById('weekdayEnd').value,
@@ -19,7 +18,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
         weekendEnd: document.getElementById('weekendEnd').value
     };
 
-    // 3. Manual Courses
+    // 3. Courses
     const courses = [];
     document.querySelectorAll('.dynamic-card').forEach(card => {
         courses.push({
@@ -31,7 +30,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
 
     const fullJson = { survey: surveyData, courses: courses, preferences: preferences };
 
-    // 4. Build FormData
+    // 4. Send
     const formData = new FormData();
     formData.append('data', JSON.stringify(fullJson));
 
@@ -56,9 +55,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
         const result = await response.json();
 
         if (response.ok) {
-            btn.textContent = "Complete!";
-            
-            // Show Download Button
+            btn.textContent = "Done!";
             if (result.ics_url) {
                 const area = document.getElementById('resultArea');
                 const link = document.getElementById('downloadLink');
@@ -66,8 +63,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
                 link.href = result.ics_url;
                 link.download = "My_Study_Schedule.ics";
             }
-            
-            alert(`Optimized ${result.courses.length} assignments!`);
+            alert(`Generated schedule for ${result.courses.length} assignments.`);
         } else {
             alert("Error: " + (result.error || "Unknown"));
         }

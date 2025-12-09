@@ -1,4 +1,4 @@
-i<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -32,48 +32,20 @@ i<!DOCTYPE html>
                 </div>
             </div>
 
+            <h3 style="margin-top:20px;">Preferred Work Windows</h3>
             <div class="grid-2">
                 <div class="field">
-                    <label>Secondary Concentration</label>
-                    <select id="secondMajor" class="major-select">
-                        <option value="N/A">None / Not Applicable</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Minor</label>
-                    <select id="minor" class="major-select">
-                        <option value="N/A">None / Not Applicable</option>
-                    </select>
-                </div>
-            </div>
-
-            <div style="border-top: 1px solid #2d2d33; margin: 20px 0;"></div>
-
-            <div class="grid-2">
-                <div>
-                    <label style="color:#8b5cf6; margin-bottom:10px; display:block;">Weekday Schedule</label>
-                    <div class="grid-2">
-                        <div class="field">
-                            <label>Wake Up</label>
-                            <input type="time" id="wakeWeekday">
-                        </div>
-                        <div class="field">
-                            <label>Sleep</label>
-                            <input type="time" id="sleepWeekday">
-                        </div>
+                    <label>Weekdays (Start - End)</label>
+                    <div style="display:flex; gap:10px;">
+                        <input type="time" id="weekdayStart" value="09:00">
+                        <input type="time" id="weekdayEnd" value="21:00">
                     </div>
                 </div>
-                <div>
-                    <label style="color:#06b6d4; margin-bottom:10px; display:block;">Weekend Schedule</label>
-                    <div class="grid-2">
-                        <div class="field">
-                            <label>Wake Up</label>
-                            <input type="time" id="wakeWeekend">
-                        </div>
-                        <div class="field">
-                            <label>Sleep</label>
-                            <input type="time" id="sleepWeekend">
-                        </div>
+                <div class="field">
+                    <label>Weekends (Start - End)</label>
+                    <div style="display:flex; gap:10px;">
+                        <input type="time" id="weekendStart" value="10:00">
+                        <input type="time" id="weekendEnd" value="20:00">
                     </div>
                 </div>
             </div>
@@ -82,30 +54,30 @@ i<!DOCTYPE html>
         <div class="section">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <h2 style="margin:0;">Assignments</h2>
-                <span style="font-size:0.8rem; color:var(--text-muted)">Add typical tasks below</span>
             </div>
-            
             <div id="assignmentsContainer"></div>
-            
             <button id="addAssignmentBtn" class="btn btn-secondary">+ Add Assignment Node</button>
         </div>
 
         <div class="section">
             <h2>Data Ingestion</h2>
-            
             <div class="field">
                 <label>Syllabus PDFs</label>
-                <div id="syllabusContainer"></div>
-                <button id="addSyllabusBtn" class="btn btn-secondary" style="margin-top:10px; border-style:dashed;">+ Attach Syllabus</button>
+                <input type="file" id="pdfUpload" multiple accept=".pdf">
             </div>
-
-            <div class="field" style="margin-top: 30px;">
+            <div class="field" style="margin-top: 20px;">
                 <label>Calendar Source (.ics)</label>
                 <input type="file" id="icsUpload" accept=".ics">
             </div>
         </div>
 
         <button id="submitBtn" class="btn btn-primary">Initialize Optimization</button>
+        
+        <div id="resultArea" style="margin-top:30px; display:none; text-align:center;">
+            <h3>Success!</h3>
+            <p>Your study schedule is ready.</p>
+            <a id="downloadLink" href="#" class="btn btn-primary" style="background:#10b981; display:inline-block; margin-top:10px;">Download Calendar (.ics)</a>
+        </div>
     </div>
 
     <script src="{{url_for('static', filename='interact.js')}}"></script>

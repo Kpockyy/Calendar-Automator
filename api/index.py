@@ -131,14 +131,7 @@ def train_model_lazy():
 
 @app.route('/', methods=['GET'])
 def home():
-    """Diagnostic Page - Shows state without crashing."""
-    return jsonify({
-        "status": "Online",
-        "folder": current_directory,
-        "files_present": os.listdir(current_directory),
-        "model_state": model_cache["status"],
-        "gemini_key": "Set" if GEMINI_API_KEY else "Missing"
-    })
+    return render_template('mains.html')
 
 @app.route('/api/generate-schedule', methods=['POST'])
 def generate_schedule():
